@@ -43,5 +43,26 @@ if [ -f /etc/debian_version ]; then
   fi
 fi
 
+# 安装nvm v0.40.4和Node 24
+export NVM_DIR="/home/vagrant/.nvm"
+mkdir -p "$NVM_DIR"
+
+# 下载并运行nvm安装脚本
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | NVM_DIR="$NVM_DIR" bash
+
+# 配置vagrant用户的bashrc
+echo 'export NVM_DIR="$HOME/.nvm"' >> /home/vagrant/.bashrc
+echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> /home/vagrant/.bashrc
+
+# 以vagrant用户身份安装Node 24
+su - vagrant <<'INNER_EOF'
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+nvm install 24
+nvm alias default 24
+INNER_EOF
+
+chown -R vagrant:vagrant /home/vagrant/.nvm
+
 # 启用SSH
 systemctl enable ssh
