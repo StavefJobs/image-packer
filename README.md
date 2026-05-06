@@ -15,6 +15,7 @@
 
 - Docker CE
 - Python 3.14 (或系统默认Python 3)
+- Node.js 24 (通过nvm v0.40.4安装)
 - OpenSSH Server
 - cloud-init
 - vim, sudo等基础工具
