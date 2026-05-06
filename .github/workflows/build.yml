@@ -42,7 +42,7 @@ jobs:
             '{"os":"debian12","version":"12","codename":"bookworm"},' \
             '{"os":"debian13","version":"13","codename":"trixie"},' \
             '{"os":"ubuntu2404","version":"24.04","codename":"noble"},' \
-            '{"os":"ubuntu2604","version":"26.04","codename":"focal"}' \
+            '{"os":"ubuntu2604","version":"26.04","codename":"resolute"}' \
             ']}' >> $GITHUB_OUTPUT
 
   build:
@@ -62,6 +62,8 @@ jobs:
           sudo apt-get install -y \
             qemu-utils \
             libguestfs-tools \
+            supermin \
+            linux-image-generic \
             wget \
             jq \
             genisoimage \
@@ -95,6 +97,10 @@ jobs:
           qemu-img resize /tmp/base.qcow2 40G
       
       - name: Customize image with vagrant config
+        env:
+          LIBGUESTFS_BACKEND: direct
+          LIBGUESTFS_DEBUG: 1
+          LIBGUESTFS_TRACE: 1
         run: |
           cp /tmp/base.qcow2 /tmp/vagrant.qcow2
           
@@ -109,6 +115,11 @@ jobs:
             --install cloud-init,vim,sudo,openssh-server,curl,gnupg,lsb-release
           
           # Install Docker
+        env:
+          LIBGUESTFS_BACKEND: direct
+          LIBGUESTFS_DEBUG: 1
+          LIBGUESTFS_TRACE: 1
+        run: |
           virt-customize -a /tmp/vagrant.qcow2 \
             --run-command "install -m 0755 -d /etc/apt/keyrings" \
             --run-command "curl -fsSL https://download.docker.com/linux/$(. /etc/os-release && echo $ID)/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg" \
@@ -117,6 +128,11 @@ jobs:
             --run-command "apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin"
           
           # Install Python 3.14 (add deadsnakes PPA for Ubuntu or use default for Debian)
+        env:
+          LIBGUESTFS_BACKEND: direct
+          LIBGUESTFS_DEBUG: 1
+          LIBGUESTFS_TRACE: 1
+        run: |
           virt-customize -a /tmp/vagrant.qcow2 \
             --run-command "case $(. /etc/os-release && echo $ID) in ubuntu) add-apt-repository ppa:deadsnakes/ppa -y || true; apt-get update; apt-get install -y python3.14 || apt-get install -y python3; esac" \
             --run-command "case $(. /etc/os-release && echo $ID) in debian) apt-get update; apt-get install -y python3 || true; esac"
