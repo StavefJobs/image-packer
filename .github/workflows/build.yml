@@ -114,7 +114,7 @@ jobs:
             --run-command "chown -R vagrant:vagrant /home/vagrant" \
             --install cloud-init,vim,sudo,openssh-server,curl,gnupg,lsb-release
           
-          # Install Docker
+      - name: Install Docker
         env:
           LIBGUESTFS_BACKEND: direct
           LIBGUESTFS_DEBUG: 1
@@ -127,7 +127,7 @@ jobs:
             --run-command "apt-get update" \
             --run-command "apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin"
           
-          # Install Python 3.14 (add deadsnakes PPA for Ubuntu or use default for Debian)
+      - name: Install Python 3.14 (add deadsnakes PPA for Ubuntu or use default for Debian)
         env:
           LIBGUESTFS_BACKEND: direct
           LIBGUESTFS_DEBUG: 1
