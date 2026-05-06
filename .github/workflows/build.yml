@@ -145,37 +145,9 @@ jobs:
           cp box-templates/virtualbox/Vagrantfile /tmp/vbox-box/
           cp /tmp/box-disk001.vmdk /tmp/vbox-box/
           
-          cat > /tmp/vbox-box/box.ovf <<'EOF'
-<?xml version="1.0"?>
-<Envelope ovf:Version="1.0" xmlns="http://schemas.dmtf.org/ovf/envelope/1">
-  <References>
-    <File ovf:href="box-disk001.vmdk" ovf:id="file1" ovf:size="0"/>
-  </References>
-  <DiskSection>
-    <Info>Virtual disk information</Info>
-    <Disk ovf:capacity="40" ovf:diskId="vmdisk1" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html"/>
-  </DiskSection>
-  <VirtualSystem ovf:id="vagrant">
-    <Info>A virtual machine</Info>
-    <OperatingSystemSection ovf:id="96" ovf:version="${{ matrix.version }}"/>
-    <VirtualHardwareSection>
-      <Info>Virtual hardware requirements</Info>
-      <Item>
-        <rasd:ResourceType>3</rasd:ResourceType>
-        <rasd:VirtualQuantity>1024</rasd:VirtualQuantity>
-      </Item>
-      <Item>
-        <rasd:ResourceType>4</rasd:ResourceType>
-        <rasd:VirtualQuantity>1</rasd:VirtualQuantity>
-      </Item>
-      <Item>
-        <rasd:ResourceType>17</rasd:ResourceType>
-        <rasd:HostResource>/disk/vmdisk1</rasd:HostResource>
-      </Item>
-    </VirtualHardwareSection>
-  </VirtualSystem>
-</Envelope>
-EOF
+          # 复制OVF模板并替换版本号
+          cp packer/templates/virtualbox/box.ovf /tmp/vbox-box/box.ovf
+          sed -i 's/${VERSION}/${{ matrix.version }}/g' /tmp/vbox-box/box.ovf
           
           cd /tmp/vbox-box
           tar czvf ${{ matrix.os }}-virtualbox.box metadata.json Vagrantfile box.ovf box-disk001.vmdk
@@ -193,20 +165,8 @@ EOF
           cp box-templates/vmware/Vagrantfile /tmp/vmware-box/
           cp /tmp/vmware-box-disk.vmdk /tmp/vmware-box/disk.vmdk
           
-          cat > /tmp/vmware-box/box.vmx <<'EOF'
-config.version = "8"
-virtualHW.version = "9"
-numvcpus = "1"
-memsize = "1024"
-displayName = "Vagrant VM"
-guestOS = "ubuntu-64"
-scsi0.present = "TRUE"
-scsi0.virtualDev = "lsilogic"
-scsi0:0.present = "TRUE"
-scsi0:0.fileName = "disk.vmdk"
-ethernet0.present = "TRUE"
-ethernet0.connectionType = "nat"
-EOF
+          # 复制VMX模板文件
+          cp packer/templates/vmware/box.vmx /tmp/vmware-box/box.vmx
           
           cd /tmp/vmware-box
           tar czvf ${{ matrix.os }}-vmware.box metadata.json Vagrantfile box.vmx disk.vmdk

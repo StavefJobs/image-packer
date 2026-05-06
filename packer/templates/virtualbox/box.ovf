@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<Envelope ovf:Version="1.0" xmlns="http://schemas.dmtf.org/ovf/envelope/1">
+  <References>
+    <File ovf:href="box-disk001.vmdk" ovf:id="file1" ovf:size="0"/>
+  </References>
+  <DiskSection>
+    <Info>Virtual disk information</Info>
+    <Disk ovf:capacity="40" ovf:diskId="vmdisk1" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html"/>
+  </DiskSection>
+  <VirtualSystem ovf:id="vagrant">
+    <Info>A virtual machine</Info>
+    <OperatingSystemSection ovf:id="96" ovf:version="${VERSION}"/>
+    <VirtualHardwareSection>
+      <Info>Virtual hardware requirements</Info>
+      <Item>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>1024</rasd:VirtualQuantity>
+      </Item>
+      <Item>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>1</rasd:VirtualQuantity>
+      </Item>
+      <Item>
+        <rasd:ResourceType>17</rasd:ResourceType>
+        <rasd:HostResource>/disk/vmdisk1</rasd:HostResource>
+      </Item>
+    </VirtualHardwareSection>
+  </VirtualSystem>
+</Envelope>
