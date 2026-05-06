@@ -1,0 +1,76 @@
+name: Build Vagrant Box
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number'
+        required: false
+        default: '1.0.0'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: |
+          if [[ "${{ github.event.inputs.version }}" != "" ]]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Packer
+        uses: hashicorp/setup-packer@v3
+
+      - name: Install VirtualBox
+        run: |
+          curl -fsSL https://www.oracle.com/virtualization/technologies/vbox/downloads/oracle_vbox_2016.asc | \
+            gpg --dearmor --yes -o /usr/share/keyrings/oracle-virtualbox-2016.gpg 2>/dev/null || true
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/oracle-virtualbox-2016.gpg] https://download.virtualbox.org/virtualbox/debian noble contrib" | \
+            sudo tee /etc/apt/sources.list.d/virtualbox.list > /dev/null
+          sudo apt update
+          sudo apt install -y virtualbox-7.1
+
+      - name: Run Packer init
+        working-directory: packer
+        run: packer init .
+
+      - name: Validate Packer template
+        working-directory: packer
+        run: packer validate -var "version=${{ steps.version.outputs.version }}" .
+
+      - name: Run Packer build
+        working-directory: packer
+        run: packer build -var "version=${{ steps.version.outputs.version }}" .
+
+      - name: Find built box
+        id: find-box
+        working-directory: packer
+        run: |
+          box_file=$(ls -1 output/*.box 2>/dev/null | head -1)
+          echo "box_file=$box_file" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vagrant-box-ubuntu2404
+          path: ${{ steps.find-box.outputs.box_file }}
+          retention-days: 30
+
+      - name: Upload to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.find-box.outputs.box_file }}
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

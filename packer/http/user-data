@@ -1,0 +1,26 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: en
+  identity:
+    hostname: vagrant
+    password: "$6$rounds=4096$vagrant$bRYBVmqMmHFCZ7N7GjZJZt5YjLGQJQGvXqN5Y5L3KQDh5N5Y5L3KQDh5N5Y5L3KQDh5N5Y5L3KQDh5N5"
+    username: vagrant
+  ssh:
+    install-server: true
+    allow-pw: true
+  packages:
+    - openssh-server
+    - curl
+    - wget
+    - git
+    - ca-certificates
+    - gnupg
+    - lsb-release
+    - software-properties-common
+    - apt-transport-https
+  late-commands:
+    - echo 'vagrant ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/vagrant
+    - chmod 440 /target/etc/sudoers.d/vagrant
