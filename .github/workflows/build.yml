@@ -1,0 +1,227 @@
+name: Build Vagrant Boxes
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      os_version:
+        description: 'OS version to build'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - debian12
+          - debian13
+          - ubuntu2404
+          - ubuntu2604
+      provider:
+        description: 'Provider to build for'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - libvirt
+          - virtualbox
+          - vmware
+
+env:
+  BOX_VERSION: ${{ github.ref_name }}
+
+jobs:
+  build-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          echo 'matrix={"include":[' \
+            '{"os":"debian12","version":"12","codename":"bookworm"},' \
+            '{"os":"debian13","version":"13","codename":"trixie"},' \
+            '{"os":"ubuntu2404","version":"24.04","codename":"noble"},' \
+            '{"os":"ubuntu2604","version":"26.04","codename":"focal"}' \
+            ']}' >> $GITHUB_OUTPUT
+
+  build:
+    needs: build-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.build-matrix.outputs.matrix) }}
+      fail-fast: false
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qemu-utils \
+            libguestfs-tools \
+            wget \
+            jq \
+            genisoimage \
+            gpg \
+            ca-certificates \
+            curl
+      
+      - name: Download cloud image
+        run: |
+          case "${{ matrix.os }}" in
+            debian12)
+              wget https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2 \
+                -O /tmp/base.qcow2
+              ;;
+            debian13)
+              wget https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2 \
+                -O /tmp/base.qcow2
+              ;;
+            ubuntu2404)
+              wget https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img \
+                -O /tmp/base.qcow2
+              ;;
+            ubuntu2604)
+              wget https://cloud-images.ubuntu.com/releases/26.04/release/ubuntu-26.04-server-cloudimg-amd64.img \
+                -O /tmp/base.qcow2
+              ;;
+          esac
+      
+      - name: Resize disk to 40GB
+        run: |
+          qemu-img resize /tmp/base.qcow2 40G
+      
+      - name: Customize image with vagrant config
+        run: |
+          cp /tmp/base.qcow2 /tmp/vagrant.qcow2
+          
+          virt-customize -a /tmp/vagrant.qcow2 \
+            --run-command "useradd -m -s /bin/bash vagrant" \
+            --run-command "echo 'vagrant:vagrant' | chpasswd" \
+            --run-command "echo 'vagrant ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/vagrant" \
+            --ssh-inject vagrant:string:"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC0fHiJrGhtEF8l3V5DehZIBazrK8f6WWXPiAywT5nTjDMI1QMArS1e1AkbQX5EdSruW5YhYV5qH2vVOVriZ2FbcCth2HkE3WdZRjQlVoheLzLwhV4AoP6R60HVSF0Yd8y6DHpizg7QlvWyKHtjB9zZ1a7kGwWG28MJ5TFCc6GAtGXRSqKFGb9y3SJN+LEVZNQAiNSlpVwP0HSpVYQ0oB2S2HzVRF6lBsfAYV4ihYgYODkvQcIj8cZCWJY8B0Cr5PbZ5FQfT2gb5Z70ZuFkGEnJ5xI5l5UwXgTgjI1CcB0yxsPVLWEvnM1y3K6c8qDnVfYqy5n2J7 vagrant insecure public key" \
+            --run-command "mkdir -p /home/vagrant/.ssh" \
+            --run-command "chmod 700 /home/vagrant/.ssh" \
+            --run-command "chown -R vagrant:vagrant /home/vagrant" \
+            --install cloud-init,vim,sudo,openssh-server,curl,gnupg,lsb-release
+          
+          # Install Docker
+          virt-customize -a /tmp/vagrant.qcow2 \
+            --run-command "install -m 0755 -d /etc/apt/keyrings" \
+            --run-command "curl -fsSL https://download.docker.com/linux/$(. /etc/os-release && echo $ID)/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg" \
+            --run-command "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$(. /etc/os-release && echo $ID) $(. /etc/os-release && echo $VERSION_CODENAME) stable\" > /etc/apt/sources.list.d/docker.list" \
+            --run-command "apt-get update" \
+            --run-command "apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin"
+          
+          # Install Python 3.14 (add deadsnakes PPA for Ubuntu or use default for Debian)
+          virt-customize -a /tmp/vagrant.qcow2 \
+            --run-command "case $(. /etc/os-release && echo $ID) in ubuntu) add-apt-repository ppa:deadsnakes/ppa -y || true; apt-get update; apt-get install -y python3.14 || apt-get install -y python3; esac" \
+            --run-command "case $(. /etc/os-release && echo $ID) in debian) apt-get update; apt-get install -y python3 || true; esac"
+      
+      - name: Build libvirt box
+        if: ${{ inputs.provider == 'all' || inputs.provider == 'libvirt' }}
+        run: |
+          mkdir -p /tmp/libvirt-box
+          cp /tmp/vagrant.qcow2 /tmp/libvirt-box/box.img
+          cp box-templates/libvirt/metadata.json /tmp/libvirt-box/
+          cp box-templates/libvirt/Vagrantfile /tmp/libvirt-box/
+          
+          cd /tmp/libvirt-box
+          tar czvf ${{ matrix.os }}-libvirt.box metadata.json Vagrantfile box.img
+          mv *.box $GITHUB_WORKSPACE/
+      
+      - name: Build virtualbox box
+        if: ${{ inputs.provider == 'all' || inputs.provider == 'virtualbox' }}
+        run: |
+          qemu-img convert -f qcow2 -O vmdk \
+            -o subformat=streamOptimized,adapter_type=lsilogic \
+            /tmp/vagrant.qcow2 /tmp/box-disk001.vmdk
+          
+          mkdir -p /tmp/vbox-box
+          cp box-templates/virtualbox/metadata.json /tmp/vbox-box/
+          cp box-templates/virtualbox/Vagrantfile /tmp/vbox-box/
+          cp /tmp/box-disk001.vmdk /tmp/vbox-box/
+          
+          cat > /tmp/vbox-box/box.ovf <<'EOF'
+<?xml version="1.0"?>
+<Envelope ovf:Version="1.0" xmlns="http://schemas.dmtf.org/ovf/envelope/1">
+  <References>
+    <File ovf:href="box-disk001.vmdk" ovf:id="file1" ovf:size="0"/>
+  </References>
+  <DiskSection>
+    <Info>Virtual disk information</Info>
+    <Disk ovf:capacity="40" ovf:diskId="vmdisk1" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html"/>
+  </DiskSection>
+  <VirtualSystem ovf:id="vagrant">
+    <Info>A virtual machine</Info>
+    <OperatingSystemSection ovf:id="96" ovf:version="${{ matrix.version }}"/>
+    <VirtualHardwareSection>
+      <Info>Virtual hardware requirements</Info>
+      <Item>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>1024</rasd:VirtualQuantity>
+      </Item>
+      <Item>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>1</rasd:VirtualQuantity>
+      </Item>
+      <Item>
+        <rasd:ResourceType>17</rasd:ResourceType>
+        <rasd:HostResource>/disk/vmdisk1</rasd:HostResource>
+      </Item>
+    </VirtualHardwareSection>
+  </VirtualSystem>
+</Envelope>
+EOF
+          
+          cd /tmp/vbox-box
+          tar czvf ${{ matrix.os }}-virtualbox.box metadata.json Vagrantfile box.ovf box-disk001.vmdk
+          mv *.box $GITHUB_WORKSPACE/
+      
+      - name: Build VMware box
+        if: ${{ inputs.provider == 'all' || inputs.provider == 'vmware' }}
+        run: |
+          qemu-img convert -f qcow2 -O vmdk \
+            -o adapter_type=lsilogic,subformat=streamOptimized \
+            /tmp/vagrant.qcow2 /tmp/vmware-box-disk.vmdk
+          
+          mkdir -p /tmp/vmware-box
+          cp box-templates/vmware/metadata.json /tmp/vmware-box/
+          cp box-templates/vmware/Vagrantfile /tmp/vmware-box/
+          cp /tmp/vmware-box-disk.vmdk /tmp/vmware-box/disk.vmdk
+          
+          cat > /tmp/vmware-box/box.vmx <<'EOF'
+config.version = "8"
+virtualHW.version = "9"
+numvcpus = "1"
+memsize = "1024"
+displayName = "Vagrant VM"
+guestOS = "ubuntu-64"
+scsi0.present = "TRUE"
+scsi0.virtualDev = "lsilogic"
+scsi0:0.present = "TRUE"
+scsi0:0.fileName = "disk.vmdk"
+ethernet0.present = "TRUE"
+ethernet0.connectionType = "nat"
+EOF
+          
+          cd /tmp/vmware-box
+          tar czvf ${{ matrix.os }}-vmware.box metadata.json Vagrantfile box.vmx disk.vmdk
+          mv *.box $GITHUB_WORKSPACE/
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-boxes
+          path: '*.box'
+      
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: '*.box'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
